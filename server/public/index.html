@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drinktionary</title>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Georgia', serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+    h1 { font-size: 2.5rem; color: #e94560; margin-bottom: 0.2em; text-align: center; }
+    .subtitle { color: #aaa; margin-bottom: 2em; font-style: italic; text-align: center; }
+    .screen { display: none; width: 100%; max-width: 600px; }
+    .screen.active { display: block; }
+    .card { background: #16213e; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+    input, textarea, select { width: 100%; padding: 12px; border-radius: 8px; border: 2px solid #333; background: #0f3460; color: #eee; font-size: 1rem; margin-bottom: 12px; }
+    textarea { min-height: 120px; resize: vertical; font-family: inherit; }
+    button { padding: 12px 24px; border-radius: 8px; border: none; background: #e94560; color: white; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    button:hover { background: #ff6b6b; transform: translateY(-1px); }
+    button:disabled { background: #555; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: #533483; }
+    .btn-secondary:hover { background: #7b4db5; }
+    .room-code { font-size: 3rem; font-weight: bold; color: #e94560; letter-spacing: 0.3em; text-align: center; padding: 20px; background: #0f3460; border-radius: 12px; margin: 16px 0; }
+    .players { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    .player-tag { background: #533483; padding: 6px 14px; border-radius: 20px; font-size: 0.9rem; }
+    .cocktail-name { font-size: 2rem; color: #ffd700; text-align: center; padding: 20px; font-style: italic; }
+    .cocktail-meta { color: #888; text-align: center; font-size: 0.85rem; margin-top: 4px; }
+    .award-card { background: #1a1a3e; border: 2px solid #533483; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .award-name { font-size: 1.3rem; margin-bottom: 8px; }
+    .award-player { color: #e94560; font-weight: bold; }
+    .award-definition { color: #ccc; font-style: italic; margin: 8px 0; padding: 10px; background: #0f3460; border-radius: 8px; }
+    .award-roast { color: #ffd700; font-size: 0.9rem; }
+    .status { text-align: center; color: #aaa; padding: 12px; }
+    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .drink-option { padding: 12px; background: #0f3460; border-radius: 8px; cursor: pointer; margin-bottom: 8px; transition: all 0.2s; border: 2px solid transparent; }
+    .drink-option:hover { border-color: #e94560; }
+    .drink-option .name { color: #ffd700; font-size: 1.1rem; }
+    .drink-option .meta { color: #888; font-size: 0.8rem; margin-top: 4px; }
+    .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+    .btn-row button { flex: 1; }
+    .waiting { animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  </style>
+</head>
+<body>
+  <h1>🍸 Drinktionary</h1>
+  <p class="subtitle">The game where cocktail names become urban legends</p>
+
+  <!-- HOME SCREEN -->
+  <div id="home" class="screen active">
+    <div class="card">
+      <input id="player-name" placeholder="Your display name" maxlength="20">
+      <button onclick="createGame()">Start New Game</button>
+      <div style="text-align:center; margin: 16px 0; color:#666;">— or —</div>
+      <input id="join-code" placeholder="Enter room code" maxlength="4" style="text-transform:uppercase; text-align:center; font-size:1.5rem; letter-spacing:0.2em;">
+      <button class="btn-secondary" onclick="joinGame()">Join Game</button>
+    </div>
+  </div>
+
+  <!-- LOBBY SCREEN -->
+  <div id="lobby" class="screen">
+    <div class="card">
+      <p style="text-align:center; color:#aaa;">Share this code with friends:</p>
+      <div class="room-code" id="display-code"></div>
+      <div class="players" id="player-list"></div>
+    </div>
+    <div id="host-controls" class="card" style="display:none;">
+      <h3 style="margin-bottom:12px;">Pick a Drink</h3>
+      <div class="btn-row">
+        <button onclick="randomDrink()">🎲 Surprise Me</button>
+        <button class="btn-secondary" onclick="showSearch()">🔍 Browse</button>
+      </div>
+      <div id="search-panel" style="display:none; margin-top:16px;">
+        <div class="filters">
+          <select id="filter-cuisine"><option value="">Any Cuisine</option></select>
+          <select id="filter-region"><option value="">Any Region</option></select>
+          <select id="filter-city"><option value="">Any City</option></select>
+          <select id="filter-country"><option value="">Any Country</option></select>
+        </div>
+        <button onclick="searchDrinks()">Search</button>
+        <div id="search-results"></div>
+      </div>
+      <div id="selected-drink" style="display:none; margin-top:16px;">
+        <div class="cocktail-name" id="preview-drink-name"></div>
+        <div class="cocktail-meta" id="preview-drink-meta"></div>
+        <button onclick="confirmDrink()" style="width:100%; margin-top:12px;">Start Round with This Drink</button>
+      </div>
+    </div>
+    <div id="guest-waiting" class="card" style="display:none;">
+      <p class="status waiting">Waiting for host to pick a drink...</p>
+    </div>
+  </div>
+
+  <!-- WRITING SCREEN -->
+  <div id="writing" class="screen">
+    <div class="card">
+      <p style="color:#aaa; text-align:center; margin-bottom:8px;">Define this cocktail name as if it were in Urban Dictionary:</p>
+      <div class="cocktail-name" id="writing-drink-name"></div>
+      <textarea id="definition-input" placeholder="Write your definition..."></textarea>
+      <button id="submit-btn" onclick="submitDef()">Submit Definition</button>
+      <p class="status" id="submit-status"></p>
+    </div>
+  </div>
+
+  <!-- REVEAL SCREEN -->
+  <div id="reveal" class="screen">
+    <div class="card">
+      <p style="color:#aaa; text-align:center;">The awards for:</p>
+      <div class="cocktail-name" id="reveal-drink-name"></div>
+    </div>
+    <div id="awards-list"></div>
+    <div class="card">
+      <button onclick="nextRound()" style="width:100%;">Next Round</button>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    let myName = "";
+    let isHost = false;
+    let roomCode = "";
+    let selectedCocktail = null;
+
+    function show(screenId) {
+      document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+      document.getElementById(screenId).classList.add("active");
+    }
+
+    function createGame() {
+      myName = document.getElementById("player-name").value.trim();
+      if (!myName) return alert("Enter your name!");
+      isHost = true;
+      socket.emit("create-room", myName, ({ code, room }) => {
+        roomCode = code;
+        updateLobby(room);
+        show("lobby");
+      });
+    }
+
+    function joinGame() {
+      myName = document.getElementById("player-name").value.trim();
+      const code = document.getElementById("join-code").value.trim().toUpperCase();
+      if (!myName) return alert("Enter your name!");
+      if (!code || code.length !== 4) return alert("Enter a 4-letter room code!");
+      socket.emit("join-room", code, myName, (result) => {
+        if (result.error) return alert(result.error);
+        roomCode = code;
+        updateLobby(result.room);
+        show("lobby");
+      });
+    }
+
+    function updateLobby(room) {
+      document.getElementById("display-code").textContent = room.code;
+      document.getElementById("player-list").innerHTML = room.players
+        .map((p) => `<span class="player-tag">${p.name}${p.name === room.host ? " 👑" : ""}</span>`)
+        .join("");
+      document.getElementById("host-controls").style.display = isHost ? "block" : "none";
+      document.getElementById("guest-waiting").style.display = isHost ? "none" : "block";
+    }
+
+    async function loadFilters() {
+      const res = await fetch("/api/filters");
+      const data = await res.json();
+      populateSelect("filter-cuisine", data.cuisines);
+      populateSelect("filter-region", data.regions);
+      populateSelect("filter-city", data.cities);
+      populateSelect("filter-country", data.countries);
+    }
+
+    function populateSelect(id, options) {
+      const sel = document.getElementById(id);
+      const first = sel.options[0].textContent;
+      sel.innerHTML = `<option value="">${first}</option>` + options.map((o) => `<option value="${o}">${o}</option>`).join("");
+    }
+
+    function showSearch() {
+      const panel = document.getElementById("search-panel");
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+      loadFilters();
+    }
+
+    async function searchDrinks() {
+      const params = new URLSearchParams();
+      const cuisine = document.getElementById("filter-cuisine").value;
+      const region = document.getElementById("filter-region").value;
+      const city = document.getElementById("filter-city").value;
+      const country = document.getElementById("filter-country").value;
+      if (cuisine) params.set("cuisine", cuisine);
+      if (region) params.set("region", region);
+      if (city) params.set("city", city);
+      if (country) params.set("country", country);
+      const res = await fetch(`/api/cocktails?${params}`);
+      const drinks = await res.json();
+      document.getElementById("search-results").innerHTML = drinks
+        .map((d) => `<div class="drink-option" onclick='selectDrink(${JSON.stringify(d)})'><div class="name">${d.name}</div><div class="meta">${d.restaurant} · ${d.city}</div></div>`)
+        .join("");
+    }
+
+    async function randomDrink() {
+      const res = await fetch("/api/cocktails/random");
+      const drink = await res.json();
+      selectDrink(drink);
+    }
+
+    function selectDrink(drink) {
+      selectedCocktail = drink;
+      document.getElementById("preview-drink-name").textContent = `"${drink.name}"`;
+      document.getElementById("preview-drink-meta").textContent = `${drink.restaurant} · ${drink.city}, ${drink.country}`;
+      document.getElementById("selected-drink").style.display = "block";
+    }
+
+    function confirmDrink() {
+      if (!selectedCocktail) return;
+      socket.emit("start-round", selectedCocktail);
+    }
+
+    function submitDef() {
+      const def = document.getElementById("definition-input").value.trim();
+      if (!def) return;
+      socket.emit("submit-definition", def, () => {
+        document.getElementById("submit-btn").disabled = true;
+        document.getElementById("submit-status").textContent = "✓ Submitted! Waiting for others...";
+        document.getElementById("submit-status").classList.add("waiting");
+      });
+    }
+
+    function nextRound() {
+      socket.emit("next-round");
+    }
+
+    // Socket events
+    socket.on("room-updated", (room) => {
+      if (room.state === "lobby" || room.state === "picking") {
+        updateLobby(room);
+        show("lobby");
+        // Reset state
+        selectedCocktail = null;
+        document.getElementById("selected-drink").style.display = "none";
+        document.getElementById("search-results").innerHTML = "";
+      }
+    });
+
+    socket.on("round-started", (room) => {
+      document.getElementById("writing-drink-name").textContent = `"${room.currentCocktail.name}"`;
+      document.getElementById("definition-input").value = "";
+      document.getElementById("submit-btn").disabled = false;
+      document.getElementById("submit-status").textContent = "";
+      show("writing");
+    });
+
+    socket.on("definition-submitted", ({ playerName: pn, count, total }) => {
+      document.getElementById("submit-status").textContent = `${count}/${total} submitted...`;
+    });
+
+    socket.on("awards-revealed", (room) => {
+      document.getElementById("reveal-drink-name").textContent = `"${room.currentCocktail.name}"`;
+      document.getElementById("awards-list").innerHTML = room.awards
+        .map((a) => `
+          <div class="award-card">
+            <div class="award-name">${a.awardName}</div>
+            <div class="award-player">${a.playerName}</div>
+            <div class="award-definition">"${a.definition}"</div>
+            <div class="award-roast">${a.awardDescription}</div>
+          </div>
+        `).join("");
+      show("reveal");
+    });
+  </script>
+</body>
+</html>

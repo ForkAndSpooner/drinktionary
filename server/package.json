@@ -1,0 +1,17 @@
+{
+  "name": "drinktionary-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "seed": "node src/seed.js"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "socket.io": "4.8.1",
+    "cors": "2.8.5",
+    "better-sqlite3": "11.7.0",
+    "nanoid": "5.0.9"
+  }
+}
