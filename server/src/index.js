@@ -5,7 +5,7 @@ import cors from "cors";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { initDb, seedDb } from "./db.js";
-import { createRoom, joinRoom, getRoom, startRound, submitDefinition, allSubmitted, setAwards, backToLobby, removePlayer } from "./game.js";
+import { createRoom, joinRoom, getRoom, startRound, submitDefinition, allSubmitted, setAwards, backToPicking, endGame, removePlayer } from "./game.js";
 import { generateAwards } from "./awards.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -17,7 +17,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(join(__dirname, "..", "public")));
 
-// Initialize and seed DB
 const db = seedDb();
 
 // REST: Search cocktails
@@ -36,13 +35,11 @@ app.get("/api/cocktails", (req, res) => {
   res.json(rows.map((r) => ({ ...r, vibes: JSON.parse(r.vibes || "[]") })));
 });
 
-// REST: Random cocktail
 app.get("/api/cocktails/random", (req, res) => {
   const row = db.prepare("SELECT * FROM cocktails ORDER BY RANDOM() LIMIT 1").get();
   res.json({ ...row, vibes: JSON.parse(row.vibes || "[]") });
 });
 
-// REST: Filter options
 app.get("/api/filters", (req, res) => {
   const cuisines = db.prepare("SELECT DISTINCT cuisine FROM cocktails ORDER BY cuisine").all().map((r) => r.cuisine);
   const cities = db.prepare("SELECT DISTINCT city FROM cocktails ORDER BY city").all().map((r) => r.city);
@@ -74,18 +71,34 @@ io.on("connection", (socket) => {
     cb({ room: result.room });
   });
 
+  // Host starts the game (moves from lobby to picking)
+  socket.on("start-game", () => {
+    if (!currentRoom) return;
+    const room = getRoom(currentRoom);
+    if (!room || playerName !== room.host) return;
+    room.state = "picking";
+    io.to(currentRoom).emit("room-updated", room);
+  });
+
   socket.on("start-round", (cocktail) => {
     if (!currentRoom) return;
-    const room = startRound(currentRoom, cocktail);
-    if (room) io.to(currentRoom).emit("round-started", room);
+    const room = getRoom(currentRoom);
+    if (!room || playerName !== room.host) return;
+    const updated = startRound(currentRoom, cocktail);
+    if (updated) io.to(currentRoom).emit("round-started", updated);
   });
 
   socket.on("submit-definition", (definition, cb) => {
     if (!currentRoom || !playerName) return;
     const room = submitDefinition(currentRoom, playerName, definition);
     if (!room) return;
-    io.to(currentRoom).emit("definition-submitted", { playerName, count: room.definitions.length, total: room.players.length });
+    io.to(currentRoom).emit("definition-submitted", {
+      playerName,
+      count: room.definitions.length,
+      total: room.players.length,
+    });
     if (allSubmitted(currentRoom)) {
+      io.to(currentRoom).emit("all-submitted");
       generateAwards(room.currentCocktail.name, room.definitions).then((awards) => {
         const updated = setAwards(currentRoom, awards);
         io.to(currentRoom).emit("awards-revealed", updated);
@@ -94,20 +107,31 @@ io.on("connection", (socket) => {
     if (cb) cb({ ok: true });
   });
 
-  socket.on("force-reveal", () => {
-    if (!currentRoom) return;
-    const room = getRoom(currentRoom);
-    if (!room || room.definitions.length === 0) return;
-    generateAwards(room.currentCocktail.name, room.definitions).then((awards) => {
-      const updated = setAwards(currentRoom, awards);
-      io.to(currentRoom).emit("awards-revealed", updated);
-    });
-  });
-
   socket.on("next-round", () => {
     if (!currentRoom) return;
-    const room = backToLobby(currentRoom);
-    if (room) io.to(currentRoom).emit("room-updated", room);
+    const room = getRoom(currentRoom);
+    if (!room || playerName !== room.host) return;
+    const updated = backToPicking(currentRoom);
+    if (updated) io.to(currentRoom).emit("room-updated", updated);
+  });
+
+  socket.on("end-game", () => {
+    if (!currentRoom) return;
+    const room = getRoom(currentRoom);
+    if (!room || playerName !== room.host) return;
+    const updated = endGame(currentRoom);
+    if (updated) io.to(currentRoom).emit("game-ended", updated);
+  });
+
+  socket.on("request-email-summary", (email, cb) => {
+    if (!currentRoom || !playerName) return;
+    const room = getRoom(currentRoom);
+    if (!room) return;
+    // Store email request - for now just acknowledge (email sending is a future feature)
+    const playerAwards = room.awardHistory.filter((a) => a.playerName === playerName);
+    // TODO: integrate email service (SendGrid, SES, etc.)
+    console.log(`Email requested: ${email} for ${playerName} (${playerAwards.length} awards)`);
+    if (cb) cb({ ok: true, message: "Email feature coming soon! Your awards are shown below." });
   });
 
   socket.on("disconnect", () => {

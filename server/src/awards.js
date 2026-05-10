@@ -1,74 +1,57 @@
-// LLM-based award generation
-// For now, uses a mock that generates fun awards without an API call
-// Replace with real Claude API call when ready
+// LLM-based award generation using Claude
 
-const AWARD_POOL = [
-  { name: "🏆 The Etymologist", trigger: "perfect use of all words" },
-  { name: "🚿 Mind In The Gutter", trigger: "too dirty" },
-  { name: "🚀 Houston, We've Lost Contact", trigger: "lost track of the name" },
-  { name: "📖 The Textbook", trigger: "overly literal" },
-  { name: "🌈 The Hallmark Channel", trigger: "unexpectedly wholesome" },
-  { name: "🤢 The Bile File", trigger: "gross-out humor" },
-  { name: "📜 The Novelist", trigger: "way too long" },
-  { name: "👀 Sounds Like a Confession", trigger: "suspiciously specific" },
-  { name: "😂 Spit-Take Award", trigger: "genuinely funny" },
-  { name: "🎭 The Drama Queen", trigger: "overly dramatic" },
-  { name: "🧠 Galaxy Brain", trigger: "overthought it" },
-  { name: "🪞 The Mirror", trigger: "clearly autobiographical" },
-  { name: "🎪 The Ringmaster", trigger: "chaotic energy" },
-  { name: "🧊 The Ice Cold Take", trigger: "deadpan delivery" },
-  { name: "🌶️ Too Spicy", trigger: "pushed boundaries" },
-  { name: "🐇 Down The Rabbit Hole", trigger: "went on a tangent" },
-  { name: "🎯 Bullseye", trigger: "nailed it perfectly" },
-  { name: "🦆 The Non Sequitur", trigger: "made no sense but was funny" },
-];
-
-// Mock award generator - assigns random awards with custom roasts
-function mockGenerateAwards(cocktailName, definitions) {
-  return definitions.map((d) => {
-    const award = AWARD_POOL[Math.floor(Math.random() * AWARD_POOL.length)];
-    const roasts = [
-      `"${cocktailName}" clearly awakened something in ${d.playerName}.`,
-      `${d.playerName} took "${cocktailName}" and ran with it. Off a cliff.`,
-      `We're not sure ${d.playerName} read the same drink name as everyone else.`,
-      `${d.playerName} understood the assignment. Maybe too well.`,
-      `This is exactly what "${cocktailName}" means and nobody can tell us otherwise.`,
-    ];
-    return {
-      playerName: d.playerName,
-      definition: d.definition,
-      awardName: award.name,
-      awardDescription: roasts[Math.floor(Math.random() * roasts.length)],
-    };
-  });
-}
-
-// Real Claude API integration
 async function claudeGenerateAwards(cocktailName, definitions) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return mockGenerateAwards(cocktailName, definitions);
+  if (!apiKey) return fallbackAwards(cocktailName, definitions);
 
-  const prompt = `You are the judge for a party game called "Drinktionary". Players are given a cocktail name from a restaurant menu and must write a fake Urban Dictionary definition for it (completely ignoring that it's a drink).
+  const prompt = `You are the unhinged, irreverent award-show host for a party game called "Drinktionary." Think of yourself as a cross between the narrator from Dungeon Crawler Carl (sarcastic, absurd, darkly funny achievement names) and the energy of Cards Against Humanity (edgy, surprising, occasionally filthy but always clever).
 
-The cocktail name is: "${cocktailName}"
+THE GAME: Players are given a real cocktail name from a restaurant menu. They must write a fake "Urban Dictionary" definition for that name — completely ignoring that it has anything to do with alcohol or drinks. The funnier, grosser, more creative, or more unhinged the definition, the better.
 
-Here are the player submissions:
+THE COCKTAIL NAME THIS ROUND: "${cocktailName}"
+
+PLAYER SUBMISSIONS:
 ${definitions.map((d) => `- ${d.playerName}: "${d.definition}"`).join("\n")}
 
-For EACH player, give them a funny, custom award. Do NOT rank them or score them. The award should roast/celebrate their specific definition. Consider:
-- Did they use all elements of the drink name cleverly?
-- Was it funny, gross, wholesome, too dirty, too literal, too long, off-topic, etc.?
+YOUR JOB: Give each player a unique, NAMED achievement/award. These are NOT scores. They are comedic commentary on what each player wrote.
 
-Respond in JSON format:
+RULES FOR AWARDS:
+1. Each award MUST have a memorable, specific name — like an Xbox achievement or a Dungeon Crawler Carl floor notification. Examples of the TONE (don't reuse these):
+   - "🏆 Achievement Unlocked: Grandma Would Be Disappointed"
+   - "🚨 You Have Been Reported to HR (Hypothetically)"
+   - "🎪 The 'Sir, This Is a Wendy's' Award"
+   - "🧠 Achievement Unlocked: Thought About This Way Too Hard"
+   - "💀 The 'I Can Never Unread This' Trophy"
+   - "🌶️ Awarded: Technically Not Bannable"
+   - "🐐 The GOAT (Grossest Of All Time)"
+   - "📖 Achievement Unlocked: Webster's Is Calling Their Lawyers"
+   - "🎭 The 'Oddly Specific and We're Concerned' Medal"
+
+2. The award name should be REACTIVE to what the player actually wrote. Don't just pick from a list — craft it based on their specific definition.
+
+3. The description should be a short, punchy roast or celebration (1-2 sentences max) that explains WHY they earned this achievement. Be specific about their definition.
+
+4. Consider these dimensions when crafting awards:
+   - Did they cleverly use ALL words in the cocktail name? (reward this)
+   - Did they go too dirty? (roast them lovingly)
+   - Did they lose track of the name entirely? (mock them for wandering off)
+   - Was it suspiciously specific / autobiographical? (call them out)
+   - Was it unexpectedly wholesome? (act surprised)
+   - Was it genuinely creative/funny? (acknowledge it but still roast)
+   - Was it too long / too short? (comment on it)
+   - Was it gross? (award them for it)
+   - Was it boring/safe? (gently shame them)
+
+5. Be FUNNY. Be SURPRISING. Channel the energy of a game that makes people laugh so hard they snort their drinks.
+
+Respond ONLY with a JSON array, no other text:
 [
   {
-    "playerName": "name",
-    "awardName": "emoji + short award title",
-    "awardDescription": "one-liner roast/compliment explaining why they got this award"
+    "playerName": "exact player name",
+    "awardName": "emoji + Achievement/Award name",
+    "awardDescription": "1-2 sentence roast/celebration"
   }
-]
-
-Be creative with award names. Make them funny. Every player gets a unique award.`;
+]`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -80,28 +63,46 @@ Be creative with award names. Make them funny. Every player gets a unique award.
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
+        max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),
     });
     const data = await res.json();
     const text = data.content[0].text;
-    // Extract JSON from response
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       const awards = JSON.parse(jsonMatch[0]);
       return definitions.map((d) => {
         const award = awards.find((a) => a.playerName === d.playerName) || {
-          awardName: "🎲 The Wild Card",
-          awardDescription: "Defied categorization entirely.",
+          awardName: "🎲 Achievement Unlocked: Defied Classification",
+          awardDescription: "The AI judge stared at this one for a while and then just shrugged.",
         };
         return { playerName: d.playerName, definition: d.definition, ...award };
       });
     }
   } catch (e) {
-    console.error("Claude API error, falling back to mock:", e.message);
+    console.error("Claude API error, falling back:", e.message);
   }
-  return mockGenerateAwards(cocktailName, definitions);
+  return fallbackAwards(cocktailName, definitions);
+}
+
+function fallbackAwards(cocktailName, definitions) {
+  const awards = [
+    "🏆 Achievement Unlocked: Grandma Would Be Disappointed",
+    "🚨 The 'Sir, This Is a Wendy's' Award",
+    "🧠 Achievement Unlocked: Overthinking Champion",
+    "💀 The 'I Can Never Unread This' Trophy",
+    "🎪 Awarded: Chaotic Neutral Energy",
+    "📖 Achievement Unlocked: Webster's Called, They're Concerned",
+    "🌶️ The 'Technically Not Bannable' Medal",
+    "🐇 Achievement Unlocked: Lost in the Sauce",
+  ];
+  return definitions.map((d, i) => ({
+    playerName: d.playerName,
+    definition: d.definition,
+    awardName: awards[i % awards.length],
+    awardDescription: `${d.playerName} took "${cocktailName}" and made it their own. We're not sure that's a good thing.`,
+  }));
 }
 
 export async function generateAwards(cocktailName, definitions) {

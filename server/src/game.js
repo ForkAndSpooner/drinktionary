@@ -1,10 +1,9 @@
 import { nanoid } from "nanoid";
 
-// In-memory game rooms (backed by DB for persistence)
 const rooms = new Map();
 
 function generateRoomCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I or O to avoid confusion
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   let code = "";
   for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
@@ -15,12 +14,13 @@ export function createRoom(hostName) {
   const room = {
     id: nanoid(),
     code,
-    state: "lobby", // lobby | picking | writing | revealing
+    state: "lobby", // lobby | picking | writing | revealing | ended
     host: hostName,
     players: [{ name: hostName, connected: true }],
     currentCocktail: null,
     definitions: [],
     awards: [],
+    awardHistory: [], // all awards across all rounds
     round: 0,
   };
   rooms.set(code, room);
@@ -30,6 +30,7 @@ export function createRoom(hostName) {
 export function joinRoom(code, playerName) {
   const room = rooms.get(code.toUpperCase());
   if (!room) return { error: "Room not found" };
+  if (room.state !== "lobby") return { error: "Game already in progress" };
   if (room.players.length >= 8) return { error: "Room is full" };
   if (room.players.find((p) => p.name === playerName)) return { error: "Name already taken" };
   room.players.push({ name: playerName, connected: true });
@@ -54,7 +55,6 @@ export function startRound(code, cocktail) {
 export function submitDefinition(code, playerName, definition) {
   const room = rooms.get(code.toUpperCase());
   if (!room || room.state !== "writing") return null;
-  // Replace if already submitted
   room.definitions = room.definitions.filter((d) => d.playerName !== playerName);
   room.definitions.push({ playerName, definition });
   return room;
@@ -70,17 +70,28 @@ export function setAwards(code, awards) {
   const room = rooms.get(code.toUpperCase());
   if (!room) return null;
   room.awards = awards;
+  // Add to history with round info
+  for (const a of awards) {
+    room.awardHistory.push({ ...a, round: room.round, cocktailName: room.currentCocktail.name });
+  }
   room.state = "revealing";
   return room;
 }
 
-export function backToLobby(code) {
+export function backToPicking(code) {
   const room = rooms.get(code.toUpperCase());
   if (!room) return null;
   room.state = "picking";
   room.currentCocktail = null;
   room.definitions = [];
   room.awards = [];
+  return room;
+}
+
+export function endGame(code) {
+  const room = rooms.get(code.toUpperCase());
+  if (!room) return null;
+  room.state = "ended";
   return room;
 }
 
